@@ -2,3 +2,7 @@
     - [ ] tabu search
     - [ ] simulated annealing
     - [ ] genetic algorithm
+- [WIP] ml-api-rust contains an API that can be used to automatically train and evaluate machine learning models.
+    - [ ] post data to API
+    - [ ] train model and specify a schedule for training
+    - [ ] get inference on new examples
