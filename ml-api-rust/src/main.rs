@@ -62,6 +62,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/user/create", post(handlers::create_user_handler))
         .route("/models/list", post(handlers::list_models))
         .route("/models/:model_id/predict", post(handlers::predict_model))
+        .route("/upload", post(handlers::upload))
         .layer(TraceLayer::new_for_http())
         .layer(socker_layer)
         // .with_state(state);

@@ -6,12 +6,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-axum = "0.7.5"
+axum = { version = "0.7.5", features = ["multipart"] }
 chrono = "0.4.38"
 dotenv = "0.15.0"
 jsonwebtoken = "9.3.0"
+linfa = "0.7.0"
+linfa-linear = "0.7.0"
 polars = { version = "0.39.2", features = ["lazy"] }
-polars-lazy = "0.39.2"
 pwhash = "1.0.0"
 serde = { version = "1.0.198", features = ["derive"] }
 serde_json = "1.0.116"

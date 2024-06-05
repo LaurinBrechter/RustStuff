@@ -1,6 +1,8 @@
+use std::fs::File;
+
 use crate::models::{self, UserCreateInfo};
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Multipart, Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -107,11 +109,56 @@ pub async fn create_user_handler(
 pub async fn list_models() {}
 
 pub async fn predict_model(Path(model_id): Path<i64>) {
-    let query = LazyCsvReader::new("/data/iris.csv")
-        .has_header(true)
-        .finish()
-        .unwrap()
-        .group_by(vec![col("species")])
-        .agg([col("*").sum()]);
-    let df = query.collect();
+    let query = LazyCsvReader::new(
+        "/home/laurinbrechter/Documents/Code/RustStuff/ml-api-rust/data/Iris.csv",
+    )
+    .has_header(true)
+    .finish()
+    .unwrap()
+    .group_by(vec![col("species")])
+    .agg([col("*").sum()]);
+    let df = query.collect().unwrap();
+
+    println!("{}", df);
+}
+
+pub async fn upload(mut multipart: Multipart) {
+    println!("Reading multipart");
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        let name = field.name().unwrap().to_string();
+        let data = field.bytes().await.unwrap();
+
+        println!("Length of `{}` is {} bytes", name, data.len());
+    }
+}
+
+use linfa::traits::Fit;
+use linfa_linear::LinearRegression;
+use std::io::ErrorKind;
+
+pub async fn train_linear_regression() -> StatusCode {
+    let file = File::open("data.csv.gz");
+
+    let file = match file {
+        Ok(file) => file,
+        Err(error) => match error.kind() {
+            ErrorKind::NotFound => return StatusCode::NOT_FOUND,
+            _ => todo!(),
+        },
+    };
+
+    return StatusCode::CREATED;
+
+    // Read the array from a GZipped CSV file with a header and separated by commas
+    let array = linfa_datasets::array_from_gz_csv(file, true, b',').unwrap();
+
+    let dataset = linfa_datasets::diabetes();
+
+    let lin_reg = LinearRegression::new();
+    let model = lin_reg.fit(&dataset)?;
+
+    println!("intercept:  {}", model.intercept());
+    println!("parameters: {}", model.params());
+
+    Ok(())
 }
