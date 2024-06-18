@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 struct Item {
     value: i32,
@@ -123,16 +123,10 @@ fn main() {
 
     // number of iterations an item is kept in the taboo list
     const TABOO_EXPIRY: u32 = 4;
-    const MAX_IT: u32 = 1;
+    const MAX_IT: u32 = 5;
 
     // the algorithm will terminate if there has been no improvement in this number of iterations
     const MAX_IT_NO_IMPROV: u32 = 4;
-
-    println!("Total weight: {}", b.total_weight());
-    println!("Total value: {}", b.total_value());
-
-
-    // let (iv, tv, tw) = is_valid(&candidates[0], &b);
 
     // println!("Candidate 0 Is valid: {}", is_valid);
     let mut solution = HashSet::from([0,1,2]);
@@ -141,11 +135,29 @@ fn main() {
 
     let (_, mut best_value, _) = is_valid(&solution, &b);
     let mut best_solution = solution.clone();
-    
+
+
+    let n_items = b.items.len();
+
+    let mut tr: HashMap<i32, i32> = HashMap::new();
+    for i in 0..n_items {
+        tr.insert(i.try_into().unwrap(), 0);
+    }
+
+    let x = tr.iter().filter(|&(_, v)| *v == 0);
+
+
+    let mut ta: HashMap<i32, i32> = HashMap::new();
+    for i in 0..n_items {
+        ta.insert(i.try_into().unwrap(), 0);
+    }
+
+    let mut it_no_improv = 0;
+
     for it in 0..MAX_IT {
         let candidates = generate_candidates(6, &solution, &taboo_remove, &taboo_add);
 
-        print!("Candidates: {:?}", candidates);
+        // print!("Candidates: {:?}", candidates);
 
         let mut best_value_it = 0;
         let mut best_candidate_it: HashSet<i32> = HashSet::new();
@@ -158,13 +170,27 @@ fn main() {
                     best_value_it = tv;
                     best_candidate_it = candidate.clone();
                     if tv > best_value {
+                        it_no_improv = 0;
                         best_value = tv;
                         best_solution = candidate.clone();
                         println!("Best solution: {:?}", best_solution);
                         println!("Best value: {:?}", best_value);
+
                     }
                 }
             }
+        }
+
+
+
+        // solution = best_candidate_it;
+
+        let added = solution.difference(&best_candidate_it).cloned().collect::<HashSet<i32>>();
+        let removed = best_candidate_it.difference(&solution).cloned().collect::<HashSet<i32>>();
+
+
+        if it_no_improv == MAX_IT_NO_IMPROV {
+            break
         }
     }
 }
