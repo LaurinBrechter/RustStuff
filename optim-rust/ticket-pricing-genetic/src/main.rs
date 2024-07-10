@@ -1,3 +1,5 @@
+use rand::prelude::*;
+
 struct TicketProblem {
     n_periods: u32,
     wtp: Vec<f32>,
@@ -5,6 +7,25 @@ struct TicketProblem {
     occurrence_prob: Vec<Vec<f32>>,
     capacity: u32,
     group_sizes: Vec<u32>,
+}
+
+struct Individual {
+    price: Vec<f32>,
+    n_offered: Vec<i32>,
+    val: f32,
+}
+
+fn random_list(m: i32, n: i32, min_val: i32) {
+    let mut rng = rand::thread_rng();
+
+    let mut arr = vec![min_val, m];
+    let left = n - 1 - m * min_val;
+
+    while left >= 0 {
+        if rng.gen::<f32>() < 0.3 {
+            arr[rng.gen_range(0..n) % m] += 1
+        }
+    }
 }
 
 fn main() {
