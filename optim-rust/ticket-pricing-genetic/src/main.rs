@@ -1,3 +1,6 @@
+mod recombinations;
+mod mutations;
+use recombinations::{recombine_price, recombine_n_offered};
 use ndarray_rand::RandomExt;
 use rand_distr::{Beta, Binomial, Distribution, Normal, Uniform};
 use rand::prelude::*;
@@ -161,32 +164,6 @@ fn objective_fn(rng: &mut ThreadRng, problem: &TicketProblem, customers: &Vec<Cu
 }
 
 
-fn recombine_price(price1: &Vec<f32>, price2: &Vec<f32>) -> Vec<f32> {
-    let mut price_new = price1.clone();
-    let t = price1.len();
-    let mut rng = rand::thread_rng();
-    let idx = rng.gen_range(0..t);
-
-    for i in idx..t {
-        price_new[i] = price2[i];
-    }
-
-    price_new
-}
-
-fn recombine_n_offered(n_offered1: &Vec<i32>, n_offered2: &Vec<i32>) -> Vec<i32> {
-    let mut n_offered_new = n_offered1.clone();
-    let t = n_offered1.len();
-    let mut rng = rand::thread_rng();
-    let idx = rng.gen_range(0..t);
-
-    for i in idx..t {
-        n_offered_new[i] = n_offered2[i];
-    }
-
-    n_offered_new
-}
-
 
 fn recombine(rng: &mut ThreadRng, problem: &TicketProblem, ind1: Individual, ind2: Individual, customers: &Vec<Customer>) -> Individual {
     let new_price = recombine_price(&ind1.price, &ind2.price);
@@ -250,6 +227,7 @@ fn main() {
     
     let mut customers = Vec::new();
 
+    
 
     for g in 0..problem.n_groups {
 
