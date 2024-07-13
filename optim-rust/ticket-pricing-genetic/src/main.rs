@@ -1,21 +1,12 @@
 mod recombinations;
 mod mutations;
+mod init_sim;
 use recombinations::{recombine_price, recombine_n_offered};
-use ndarray_rand::RandomExt;
-use rand_distr::{Beta, Binomial, Distribution, Normal, Uniform};
+use rand_distr::{Binomial, Distribution, Normal, Uniform};
 use rand::prelude::*;
-use ndarray::Array1;
+use init_sim::{sample_group_sizes, init_occurence_probs, sample_halfnormal};
 
-struct TicketProblem {
-    n_periods: u32,
-    wtp: Vec<f32>,
-    wtps: Vec<f32>,
-    occurrence_prob: Vec<Vec<f32>>,
-    capacity: u32,
-    group_sizes: Vec<u32>,
-    total_individuals: u32,
-    n_groups: u32,
-}
+
 
 #[derive(Clone)]
 #[derive(Debug)]
@@ -23,62 +14,6 @@ struct Individual {
     price: Vec<f32>,
     n_offered: Vec<i32>,
     val: f32,
-}
-
-fn sample_group_sizes(n_groups: u32, n_individuals:u32) -> Vec<u32> {
-    let mut rng = rand::thread_rng();
-    let mut group_sizes = Vec::new();
-    let mut left = n_individuals;
-
-    for g in 0..n_groups {
-        if g == n_groups - 1 {
-            group_sizes.push(left);
-        } else  {
-            let size = rng.gen_range(1..left + g - n_groups);
-            group_sizes.push(size);
-            left -= size;
-        } 
-    }
-    return group_sizes;
-}
-
-
-fn init_occurence_probs(n_periods: usize, group_sizes: Vec<usize>) -> Vec<Vec<f32>> {
-    let mut rng = rand::thread_rng();
-    let uniform_dist = Uniform::from(0..(n_periods-1));
-    
-    let mut occurrences: Vec<Vec<f32>> = Vec::new();
-
-    for _g in group_sizes {
-        let start = uniform_dist.sample(&mut rng);
-        let end = rng.gen_range((start + 1)..n_periods);
-        
-        let beta_dist = Beta::new(1.0, 1.0).unwrap();
-        let mut probs: Array1<f32> = Array1::random(end - start, beta_dist);
-        let probs_sum: f32 = probs.sum();
-        
-        for val in probs.iter_mut() {
-            *val = f32::min(1.0, 2.0 * (*val) / probs_sum);
-        }
-
-        let mut occurence = vec![0.0; start];
-        occurence.extend(probs.to_vec());
-        occurence.extend(vec![0.0; n_periods - end]);
-        
-        occurrences.push(occurence);
-    }
-
-    occurrences
-}
-
-
-fn sample_halfnormal(rng: &mut ThreadRng, loc: f32, scale: f32) -> f32 {
-    let normal_dist = Normal::new(0.0, 1.0).unwrap();
-    let mut val = normal_dist.sample(rng);
-    while val < 0.0 {
-        val = normal_dist.sample(rng);
-    }
-    return val * scale + loc;
 }
 
 
@@ -92,7 +27,7 @@ struct Customer {
 }
 
 
-fn objective_fn(rng: &mut ThreadRng, problem: &TicketProblem, customers: &Vec<Customer>, ind:Individual) -> f32 {
+fn objective_fn(rng: &mut ThreadRng, problem: &TicketProblem, customers: &Vec<Customer>, ind:&Individual) -> f32 {
 
     let mut tickets_left = problem.capacity;
     let mut revenue: f32 = 0.0;
@@ -165,7 +100,7 @@ fn objective_fn(rng: &mut ThreadRng, problem: &TicketProblem, customers: &Vec<Cu
 
 
 
-fn recombine(rng: &mut ThreadRng, problem: &TicketProblem, ind1: Individual, ind2: Individual, customers: &Vec<Customer>) -> Individual {
+fn recombine(rng: &mut ThreadRng, problem: &TicketProblem, ind1: &Individual, ind2: &Individual, customers: &Vec<Customer>) -> Individual {
     let new_price = recombine_price(&ind1.price, &ind2.price);
     let new_n_offered = recombine_n_offered(&ind1.n_offered, &ind2.n_offered);
 
@@ -175,10 +110,18 @@ fn recombine(rng: &mut ThreadRng, problem: &TicketProblem, ind1: Individual, ind
         val: 0.0
     };
 
-    new_ind.val = objective_fn(rng, problem, customers, new_ind.clone());
+    // new_ind.val = objective_fn(rng, problem, customers, &new_ind);
 
     return new_ind;
 }
+
+
+fn mutate(problem: &TicketProblem, ind: &mut Individual) {
+    mutations::mutate_price(&mut ind.price);
+    mutations::mutate_n_tickets_offered(&mut ind.n_offered, problem.capacity as i32);
+}
+
+
 
 fn init_individual(rng: &mut ThreadRng, problem: &TicketProblem, customers: &Vec<Customer>) -> Individual {
     
@@ -194,10 +137,30 @@ fn init_individual(rng: &mut ThreadRng, problem: &TicketProblem, customers: &Vec
         val: 0.0
     };
 
-    new_ind.val = objective_fn(rng, problem, customers, new_ind.clone());
+    new_ind.val = objective_fn(rng, problem, customers, &new_ind);
     new_ind
 }
 
+
+struct TicketProblem {
+    n_periods: u32,
+    wtp: Vec<f32>,
+    wtps: Vec<f32>,
+    occurrence_prob: Vec<Vec<f32>>,
+    capacity: u32,
+    group_sizes: Vec<u32>,
+    total_individuals: u32,
+    n_groups: u32,
+}
+
+
+struct GAAgrs {
+    pop_size: u32,
+    n_iter: u32,
+    n_resample: u32,
+    n_children: u32,
+    mutation_rate: f32,
+}
 
 fn main() {
     let mut rng = rand::thread_rng();
@@ -248,21 +211,76 @@ fn main() {
     let ind1 = init_individual(&mut rng, &problem, &customers);
     let ind2 = init_individual(&mut rng, &problem, &customers);
 
-    let new_ind = recombine(&mut rng, &problem, ind1, ind2, &customers);
+    let new_ind = recombine(&mut rng, &problem, &ind1, &ind2, &customers);
 
     println!("New Ind: {:?}", &new_ind);
 
-    // sample objective 1000 times
-    // let mut revs = Vec::new();
-    // for _ in 0..1000 {
-    //     revs.push(objective_fn(&mut rng, &problem, &customers, Individual {
-    //         price: vec![0.2; problem.n_periods as usize],
-    //         n_offered: vec![10; problem.n_periods as usize],
-    //         val: 0.0
-    //     }));
-    // }
 
 
 
+    let ga_args = GAAgrs {
+        pop_size: 100,
+        n_iter: 10,
+        n_resample: 10,
+        n_children: 100,
+        mutation_rate: 0.1,
+    };
+
+    let mut population = (0..ga_args.pop_size).map(|_| init_individual(&mut rng, &problem, &customers)).collect::<Vec<Individual>>();
+
+
+    for _ in 0..10 {
+        
+        // sum up objective values
+        let mut obj_val_sum = 0.0;
+        for ind in &population {
+            obj_val_sum += ind.val;
+        }
+
+        println!("Avg fitness: {}", obj_val_sum / ga_args.pop_size as f32);
+
+        
+
+        let mut n_valid_children = 0;
+        while n_valid_children < ga_args.n_children {
+
+            let mut parents: Vec<&Individual> = Vec::new();
+
+            while parents.len() < 2{
+                for ind in &population {
+                    if rng.gen::<f32>() < ind.val / obj_val_sum {
+                        parents.push(&ind)
+                    }
+                }
+            }
+
+            let ind1 = parents[0];
+            let ind2 = parents[1];
+            let mut new_ind = recombine(&mut rng, &problem, &ind1.clone(), &ind2.clone(), &customers);
+            
+            if rng.gen::<f32>() < ga_args.mutation_rate {
+                mutate(&problem, &mut new_ind);
+            }
+
+            new_ind.val = objective_fn(&mut rng, &problem, &customers, &new_ind);
+
+            n_valid_children += 1;
+
+            population.push(new_ind);
+
+        }
+
+        println!("Population size: {}", population.len());
+
+        population.sort_by(|a, b| b.val.partial_cmp(&a.val).unwrap());
+
+        population = population.iter().take(ga_args.pop_size as usize).map(|x| x.clone()).collect::<Vec<Individual>>();
+
+        // print obj values
+        // for ind in &population {
+        //     println!("{}", ind.val);
+        // }
+
+    }   
 
 }
