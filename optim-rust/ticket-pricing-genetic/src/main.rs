@@ -1,3 +1,6 @@
+// use rayon::prelude::*;
+use std::fs::File;
+use std::io::{Write, Read};
 mod recombinations;
 mod mutations;
 mod init_sim;
@@ -20,87 +23,95 @@ struct Individual {
 #[derive(Clone)]
 struct Customer {
     group: u32,
-    period_occ: Option<u32>,
+    // period_occ: Option<u32>,
     wtp: f32,
     bought: bool,
     id: u32
 }
 
 
-fn objective_fn(rng: &mut ThreadRng, problem: &TicketProblem, customers: &Vec<Customer>, ind:&Individual) -> f32 {
+fn objective_fn(rng: &mut ThreadRng, problem: &TicketProblem, customers: &Vec<Customer>, ind:&Individual, n_runs:u32) -> f32 {
 
-    let mut tickets_left = problem.capacity;
-    let mut revenue: f32 = 0.0;
-    let mut customers_c = customers.clone();
+    let mut revenues = vec![0.0 as f32; n_runs as usize];
 
-    for t in 0..problem.n_periods {
-        
-        let t_idx = t as usize;
+    for run in 0..n_runs {
 
-        let mut willing_to_pay: Vec<Customer> = Vec::new();
-        let mut appearing: Vec<&Customer> = Vec::new();
+        let mut tickets_left = problem.capacity;
+        let mut revenue: f32 = 0.0;
+        let mut customers_c = customers.clone();
 
-
-        for g in 0..problem.n_groups {
-            let g_idx = g as usize;
-
-            if problem.occurrence_prob[g_idx][t_idx] == 0.0 {
-                continue;
-            }
-
-            let binom_dist = Binomial::new(problem.group_sizes[g_idx] as u64, problem.occurrence_prob[g_idx][t_idx] as f64);
-
-            if binom_dist.is_err() {
-                println!("{}", problem.occurrence_prob[g_idx][t_idx] as f64);
-            }
-
+        for t in 0..problem.n_periods {
             
-            // sample n_occ individuals from group g from customers
-            let mut group_customers = customers_c.iter().filter(|&c| c.group == g && c.bought == false).collect::<Vec<&Customer>>();
-            let n_occ = std::cmp::min(group_customers.len(), binom_dist.unwrap().sample(rng).try_into().unwrap());
-            group_customers.shuffle(rng);
+            let t_idx = t as usize;
 
-            for i in 0..n_occ {
-                let customer = group_customers[i as usize];
-                appearing.push(customer);
+            let mut willing_to_pay: Vec<Customer> = Vec::new();
+            let mut appearing: Vec<&Customer> = Vec::new();
 
-                if customer.wtp >= ind.price[t_idx] {
-                    willing_to_pay.push(customer.clone());
+
+            for g in 0..problem.n_groups {
+                let g_idx = g as usize;
+
+                if problem.occurrence_prob[g_idx][t_idx] == 0.0 {
+                    continue;
+                }
+
+                let binom_dist = Binomial::new(problem.group_sizes[g_idx] as u64, problem.occurrence_prob[g_idx][t_idx] as f64);
+
+                if binom_dist.is_err() {
+                    println!("{}", problem.occurrence_prob[g_idx][t_idx] as f64);
+                }
+
+                
+                // sample n_occ individuals from group g from customers
+                let mut group_customers = customers_c.iter().filter(|&c| c.group == g && c.bought == false).collect::<Vec<&Customer>>();
+                let n_occ = std::cmp::min(group_customers.len(), binom_dist.unwrap().sample(rng).try_into().unwrap());
+                group_customers.shuffle(rng);
+
+                for i in 0..n_occ {
+                    let customer = group_customers[i as usize];
+                    appearing.push(customer);
+
+                    if customer.wtp >= ind.price[t_idx] {
+                        willing_to_pay.push(customer.clone());
+                    }
                 }
             }
+
+            let n_tickets_sold = std::cmp::min(
+                std::cmp::min(
+                    tickets_left,
+                    willing_to_pay.len() as u32),
+                ind.n_offered[t_idx] as u32
+            );
+            tickets_left -= n_tickets_sold;
+            revenue += n_tickets_sold as f32 * ind.price[t_idx];
+
+            
+
+            // set the bough attribute to true for the customers that bought a ticket
+            willing_to_pay.shuffle(rng);
+
+
+            for i in 0..n_tickets_sold {
+                let customer = &willing_to_pay[i as usize];
+                customers_c.iter_mut().find(|c| c.id == customer.id && c.group == customer.group).unwrap().bought = true;
+            }
+
+            if tickets_left == 0 {
+                break;
+            }
+
         }
 
-        let n_tickets_sold = std::cmp::min(
-            std::cmp::min(
-                tickets_left,
-                willing_to_pay.len() as u32),
-            ind.n_offered[t_idx] as u32
-        );
-        tickets_left -= n_tickets_sold;
-        revenue += n_tickets_sold as f32 * ind.price[t_idx];
-
+        revenues[run as usize] = revenue;
         
-
-        // set the bough attribute to true for the customers that bought a ticket
-        willing_to_pay.shuffle(rng);
-
-
-        for i in 0..n_tickets_sold {
-            let customer = &willing_to_pay[i as usize];
-            customers_c.iter_mut().find(|c| c.id == customer.id).unwrap().bought = true;
-        }
-
-        if tickets_left == 0 {
-            break;
-        }
-
     }
-    return revenue;
+    return revenues.iter().sum::<f32>() / n_runs as f32;
 }
 
 
 
-fn recombine(rng: &mut ThreadRng, problem: &TicketProblem, ind1: &Individual, ind2: &Individual, customers: &Vec<Customer>) -> Individual {
+fn recombine(rng: &mut ThreadRng, problem: &TicketProblem, ind1: &Individual, ind2: &Individual, customers: &Vec<Customer>, n_resample:u32) -> Individual {
     let new_price = recombine_price(&ind1.price, &ind2.price);
     let new_n_offered = recombine_n_offered(&ind1.n_offered, &ind2.n_offered);
 
@@ -110,7 +121,7 @@ fn recombine(rng: &mut ThreadRng, problem: &TicketProblem, ind1: &Individual, in
         val: 0.0
     };
 
-    // new_ind.val = objective_fn(rng, problem, customers, &new_ind);
+    new_ind.val = objective_fn(rng, problem, customers, &new_ind, n_resample);
 
     return new_ind;
 }
@@ -123,7 +134,7 @@ fn mutate(problem: &TicketProblem, ind: &mut Individual) {
 
 
 
-fn init_individual(rng: &mut ThreadRng, problem: &TicketProblem, customers: &Vec<Customer>) -> Individual {
+fn init_individual(rng: &mut ThreadRng, problem: &TicketProblem, customers: &Vec<Customer>, n_resample:u32) -> Individual {
     
     let price_dist = Normal::new(2.0, 2.0).unwrap();
     let price = (0..problem.n_periods).map(|_| price_dist.sample(rng)).collect::<Vec<f32>>();
@@ -137,8 +148,64 @@ fn init_individual(rng: &mut ThreadRng, problem: &TicketProblem, customers: &Vec
         val: 0.0
     };
 
-    new_ind.val = objective_fn(rng, problem, customers, &new_ind);
+    new_ind.val = objective_fn(rng, problem, customers, &new_ind, n_resample);
     new_ind
+}
+
+fn run(ga_args: &GAAgrs, problem: TicketProblem, customers: Vec<Customer>, mut population: Vec<Individual>, rng: &mut ThreadRng) -> Vec<f32> {
+    let mut avg_fitness_t: Vec<f32> = Vec::new();
+    
+    for _ in 0..ga_args.n_iter {
+        
+        // sum up objective values
+        let mut obj_val_sum = 0.0;
+        for ind in &population {
+            obj_val_sum += ind.val;
+        }
+
+        let avg_fitness = obj_val_sum / ga_args.pop_size as f32;
+
+        avg_fitness_t.push(avg_fitness);
+
+        println!("Avg fitness: {}", avg_fitness);
+
+        let mut n_valid_children = 0;
+        while n_valid_children < ga_args.n_children {
+
+            let mut parents: Vec<&Individual> = Vec::new();
+
+            while parents.len() < 2{
+                for ind in &population {
+                    if rng.gen::<f32>() < ind.val / obj_val_sum {
+                        parents.push(&ind)
+                    }
+                }
+            }
+
+            let ind1 = parents[0];
+            let ind2 = parents[1];
+            let mut new_ind = recombine(rng, &problem, &ind1.clone(), &ind2.clone(), &customers, ga_args.n_resample);
+            
+            if rng.gen::<f32>() < ga_args.mutation_rate {
+                mutate(&problem, &mut new_ind);
+            }
+
+            new_ind.val = objective_fn(rng, &problem, &customers, &new_ind, ga_args.n_resample);
+
+            n_valid_children += 1;
+
+            population.push(new_ind);
+
+        }
+
+        population.sort_by(|a, b| b.val.partial_cmp(&a.val).unwrap());
+
+        population = population.iter().take(ga_args.pop_size as usize).map(|x| x.clone()).collect::<Vec<Individual>>();
+
+    };
+
+    return avg_fitness_t;
+
 }
 
 
@@ -177,11 +244,12 @@ fn main() {
     };
 
     let group_sizes = sample_group_sizes(problem.n_groups, problem.total_individuals);
-    problem.group_sizes = group_sizes.clone();
+    problem.group_sizes = group_sizes;
+    
     let wtp_g_dist = Normal::new(0.0, 1.0).unwrap();
     let wtps_g_dist = Normal::new(0.0, 1.0).unwrap();
     
-    let occ_probs = init_occurence_probs(problem.n_periods as usize, group_sizes.iter().map(|&x| x as usize).collect());
+    let occ_probs = init_occurence_probs(problem.n_periods as usize, &problem.group_sizes.iter().map(|&x| x as usize).collect());
     problem.occurrence_prob = occ_probs;
 
     // sample wtp for each group
@@ -196,10 +264,10 @@ fn main() {
 
         let g_idx = g as usize;
 
-        for i in 0..group_sizes[g as usize] {
+        for i in 0..problem.group_sizes[g as usize] {
             let customer = Customer {
                 group: g as u32,
-                period_occ: None,
+                // period_occ: None,
                 wtp: sample_halfnormal(&mut rng, wtp_g[g_idx], wtps_g[g_idx]),
                 bought: false,
                 id: i as u32
@@ -208,79 +276,53 @@ fn main() {
         }
     }
 
-    let ind1 = init_individual(&mut rng, &problem, &customers);
-    let ind2 = init_individual(&mut rng, &problem, &customers);
-
-    let new_ind = recombine(&mut rng, &problem, &ind1, &ind2, &customers);
-
-    println!("New Ind: {:?}", &new_ind);
-
-
-
 
     let ga_args = GAAgrs {
-        pop_size: 100,
+        pop_size: 150,
         n_iter: 10,
-        n_resample: 10,
-        n_children: 100,
-        mutation_rate: 0.1,
+        n_resample: 3,
+        n_children: 200,
+        mutation_rate: 0.3,
     };
 
-    let mut population = (0..ga_args.pop_size).map(|_| init_individual(&mut rng, &problem, &customers)).collect::<Vec<Individual>>();
+    let population = (0..ga_args.pop_size).map(|_| init_individual(&mut rng, &problem, &customers, ga_args.n_resample)).collect::<Vec<Individual>>();
 
 
-    for _ in 0..10 {
-        
-        // sum up objective values
-        let mut obj_val_sum = 0.0;
-        for ind in &population {
-            obj_val_sum += ind.val;
-        }
+    // let ind = init_individual(&mut rng, &problem, &customers, ga_args.n_resample);
 
-        println!("Avg fitness: {}", obj_val_sum / ga_args.pop_size as f32);
+    let n_evals = ga_args.pop_size + ga_args.n_children * ga_args.n_resample * ga_args.n_iter;
 
-        
+    println!("Number of evaluations: {}", n_evals);
 
-        let mut n_valid_children = 0;
-        while n_valid_children < ga_args.n_children {
+    
 
-            let mut parents: Vec<&Individual> = Vec::new();
+    let mut results_file = File::create("results_mutation_exp.csv").unwrap();
 
-            while parents.len() < 2{
-                for ind in &population {
-                    if rng.gen::<f32>() < ind.val / obj_val_sum {
-                        parents.push(&ind)
-                    }
-                }
-            }
+    
+    let avg_fitness_t = run(&ga_args, problem, customers, population, &mut rng);
+    let gain_per_eval = (avg_fitness_t[ga_args.n_iter as usize - 1] - avg_fitness_t[0])/n_evals as f32;
+    
+    
+    results_file.write("mutation_rate,iteration,avg_fitness\n".as_bytes()).unwrap();
+    
+    let mut it = 0;
+    for iteration in avg_fitness_t.iter() {
 
-            let ind1 = parents[0];
-            let ind2 = parents[1];
-            let mut new_ind = recombine(&mut rng, &problem, &ind1.clone(), &ind2.clone(), &customers);
-            
-            if rng.gen::<f32>() < ga_args.mutation_rate {
-                mutate(&problem, &mut new_ind);
-            }
+        let row = format!("{},{},{}\n", ga_args.mutation_rate, it, iteration);
 
-            new_ind.val = objective_fn(&mut rng, &problem, &customers, &new_ind);
+        results_file.write_all(row.as_bytes()).unwrap();
 
-            n_valid_children += 1;
+        // results_file.write_all(ga_args.mutation_rate.to_string().as_bytes()).unwrap();
+        // results_file.write_all(it.to_string().as_bytes()).unwrap();
+        // results_file.write_all(",".as_bytes()).unwrap();
+        // results_file.write_all(iteration.to_string().as_bytes()).unwrap();
+        // results_file.write_all("\n".as_bytes()).unwrap();
+        it += 1;
+    }
 
-            population.push(new_ind);
 
-        }
+    // results_file.write_all(avg_fitness_t.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(",").as_bytes()).unwrap();
 
-        println!("Population size: {}", population.len());
-
-        population.sort_by(|a, b| b.val.partial_cmp(&a.val).unwrap());
-
-        population = population.iter().take(ga_args.pop_size as usize).map(|x| x.clone()).collect::<Vec<Individual>>();
-
-        // print obj values
-        // for ind in &population {
-        //     println!("{}", ind.val);
-        // }
-
-    }   
+    println!("Gain per evaluation: {}", gain_per_eval);
 
 }

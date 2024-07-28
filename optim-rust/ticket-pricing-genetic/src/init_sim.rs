@@ -23,7 +23,7 @@ pub fn sample_group_sizes(n_groups: u32, n_individuals:u32) -> Vec<u32> {
 }
 
 
-pub fn init_occurence_probs(n_periods: usize, group_sizes: Vec<usize>) -> Vec<Vec<f32>> {
+pub fn init_occurence_probs(n_periods: usize, group_sizes: &Vec<usize>) -> Vec<Vec<f32>> {
     let mut rng = rand::thread_rng();
     let uniform_dist = Uniform::from(0..(n_periods-1));
     
