@@ -4,7 +4,9 @@ use std::io::{Write, Read};
 mod recombinations;
 mod mutations;
 mod init_sim;
+mod selection;
 use recombinations::{recombine_price, recombine_n_offered};
+use selection::{roulette_selection, tournament_selection};
 use rand_distr::{Binomial, Distribution, Normal, Uniform};
 use rand::prelude::*;
 use init_sim::{sample_group_sizes, init_occurence_probs, sample_halfnormal};
@@ -172,18 +174,8 @@ fn run(ga_args: &GAAgrs, problem: &TicketProblem, customers: &Vec<Customer>, mut
         let mut n_valid_children = 0;
         while n_valid_children < ga_args.n_children {
 
-            let mut parents: Vec<Individual> = Vec::new();
+            let (ind1, ind2) = roulette_selection(&population, obj_val_sum, rng);
 
-            while parents.len() < 2{
-                for ind in &population {
-                    if rng.gen::<f32>() < ind.val / obj_val_sum {
-                        parents.push(ind.clone())
-                    }
-                }
-            }
-
-            let ind1 = parents[0].clone();
-            let ind2 = parents[1].clone();
             let mut new_ind = recombine(rng, &problem, &ind1.clone(), &ind2.clone(), &customers, ga_args.n_resample);
             
             if rng.gen::<f32>() < ga_args.mutation_rate {
