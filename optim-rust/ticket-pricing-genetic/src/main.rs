@@ -1,3 +1,4 @@
+use std::fmt;
 // use rayon::prelude::*;
 use std::fs::File;
 use std::io::{Write, Read};
@@ -174,7 +175,17 @@ fn run(ga_args: &GAAgrs, problem: &TicketProblem, customers: &Vec<Customer>, mut
         let mut n_valid_children = 0;
         while n_valid_children < ga_args.n_children {
 
-            let (ind1, ind2) = roulette_selection(&population, obj_val_sum, rng);
+            let (ind1, ind2): (Individual, Individual);
+
+            match ga_args.selection_strategy {
+                SelectionStrategy::Roulette => {
+                    (ind1, ind2) = roulette_selection(&population, obj_val_sum, rng);
+                },
+                SelectionStrategy::Tournament => {
+                    (ind1, ind2) = tournament_selection(&population, 5, rng);
+                }
+            }
+
 
             let mut new_ind = recombine(rng, &problem, &ind1.clone(), &ind2.clone(), &customers, ga_args.n_resample);
             
@@ -213,12 +224,28 @@ struct TicketProblem {
 }
 
 
+enum SelectionStrategy {
+    Roulette,
+    Tournament
+}
+
+
+impl fmt::Display for SelectionStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SelectionStrategy::Roulette => write!(f, "Roulette"),
+            SelectionStrategy::Tournament => write!(f, "Tournament"),
+        }
+    }
+}
+
 struct GAAgrs {
     pop_size: u32,
     n_iter: u32,
     n_resample: u32,
     n_children: u32,
     mutation_rate: f32,
+    selection_strategy: SelectionStrategy
 }
 
 fn main() {
@@ -231,7 +258,7 @@ fn main() {
         wtp: vec![0.2],
         wtps: vec![0.4],
         occurrence_prob: vec![vec![0.2, 0.4]],
-        total_individuals: 200,
+        total_individuals: 1000,
         n_groups: 6,
     };
 
@@ -270,11 +297,12 @@ fn main() {
 
 
     let mut ga_args = GAAgrs {
-        pop_size: 150,
+        pop_size: 100,
         n_iter: 10,
         n_resample: 3,
-        n_children: 200,
+        n_children: 100,
         mutation_rate: 0.3,
+        selection_strategy: SelectionStrategy::Roulette
     };
 
     
@@ -285,51 +313,40 @@ fn main() {
     
     
 
-    let mut results_file = File::create("results_experiment_init.csv").unwrap();
+    let mut results_file = File::create("results_experiment_n_resample1.csv").unwrap();
 
     
     // let avg_fitness_t = run(&ga_args, problem, customers, population, &mut rng);
     // let gain_per_eval = (avg_fitness_t[ga_args.n_iter as usize - 1] - avg_fitness_t[0])/n_evals as f32;
     
     
-    results_file.write("mutation_rate,iteration,avg_fitness\n".as_bytes()).unwrap();
-    // let n_evals = ga_args.pop_size + ga_args.n_children * ga_args.n_resample * ga_args.n_iter;
+    // 
     // println!("Number of evaluations: {}", n_evals);
     
+    results_file.write("n_evals,parameter,iteration,avg_fitness\n".as_bytes()).unwrap();
     
-    for mutation_rate in 0..5 {
-        let population = (0..ga_args.pop_size).map(|_| init_individual(&mut rng, &problem, &customers, ga_args.n_resample)).collect::<Vec<Individual>>();
-        let mut it = 0;
-        // ga_args.mutation_rate = mutation_rate as f32 / 10.0;
-        ga_args.mutation_rate = 0.3;
-        let avg_fitness_t = run(&ga_args, &problem, &customers, population.clone(), &mut rng);
-        for iteration in avg_fitness_t.iter() {
+    // for mutation_rate in 2..7 {
+    // for strategy in vec![SelectionStrategy::Roulette, SelectionStrategy::Tournament] {
+    for n_resample in 1..6 {
+                // ga_args.mutation_rate = mutation_rate as f32 / 10.0;
+        ga_args.n_resample = n_resample;
 
-            let row = format!("{},{},{}\n", ga_args.mutation_rate, it, iteration);
+        println!("Parameter: {}", n_resample);
+        let n_evals = ga_args.pop_size * n_resample + ga_args.n_children * ga_args.n_resample * ga_args.n_iter;
+        
+        for run_t in 0..7 {
+            let mut it = 0;
+            let population = (0..ga_args.pop_size).map(|_| init_individual(&mut rng, &problem, &customers, ga_args.n_resample)).collect::<Vec<Individual>>();
+            let avg_fitness_t = run(&ga_args, &problem, &customers, population.clone(), &mut rng);
+            for iteration in avg_fitness_t.iter() {
 
-            results_file.write_all(row.as_bytes()).unwrap();
+                let row = format!("{},{},{},{}\n", n_evals, ga_args.n_resample, it, iteration);
 
-            it += 1;
+                results_file.write_all(row.as_bytes()).unwrap();
+
+                it += 1;
+            }
         }
     }
-
-    // for iteration in avg_fitness_t.iter() {
-
-    //     let row = format!("{},{},{}\n", ga_args.mutation_rate, it, iteration);
-
-    //     results_file.write_all(row.as_bytes()).unwrap();
-
-    //     // results_file.write_all(ga_args.mutation_rate.to_string().as_bytes()).unwrap();
-    //     // results_file.write_all(it.to_string().as_bytes()).unwrap();
-    //     // results_file.write_all(",".as_bytes()).unwrap();
-    //     // results_file.write_all(iteration.to_string().as_bytes()).unwrap();
-    //     // results_file.write_all("\n".as_bytes()).unwrap();
-    //     it += 1;
-    // }
-
-
-    // results_file.write_all(avg_fitness_t.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(",").as_bytes()).unwrap();
-
-    // println!("Gain per evaluation: {}", gain_per_eval);
 
 }
