@@ -298,7 +298,7 @@ fn main() {
     
     
 
-    let mut results_file = File::create("results_experiment_long.csv").unwrap();
+    let mut results_file = File::create("results_experiment_tau.csv").unwrap();
 
     
     // let avg_fitness_t = run(&ga_args, problem, customers, population, &mut rng);
@@ -309,23 +309,27 @@ fn main() {
     // println!("Number of evaluations: {}", n_evals);
     
     results_file.write("n_evals,parameter,iteration,avg_fitness\n".as_bytes()).unwrap();
+
+    let mut tau = 3.0;
+    let n_resample = 3;
+
     
     // for mutation_rate in 2..7 {
     // for strategy in vec![SelectionStrategy::Roulette, SelectionStrategy::Tournament] {
-    for n_resample in 2..3 {
+    for tau in vec![1, 3, 5] {
                 // ga_args.mutation_rate = mutation_rate as f32 / 10.0;
         ga_args.n_resample = n_resample;
 
-        println!("Parameter: {}", n_resample);
+        println!("Parameter: {}", tau);
         let n_evals = ga_args.pop_size * n_resample + ga_args.n_children * ga_args.n_resample * ga_args.n_iter;
         
-        for run_t in 0..7 {
+        for run_t in 0..3 {
             let mut it = 0;
-            let population = (0..ga_args.pop_size).map(|_| init_individual(&mut rng, &problem, &customers, ga_args.n_resample)).collect::<Vec<Individual>>();
+            let population = (0..ga_args.pop_size).map(|_| init_individual(&mut rng, &problem, &customers, ga_args.n_resample, tau as f32)).collect::<Vec<Individual>>();
             let avg_fitness_t = run(&ga_args, &problem, &customers, population.clone(), &mut rng);
-            for iteration in avg_fitness_t.iter() {
+            for fitness in avg_fitness_t.iter() {
 
-                let row = format!("{},{},{},{}\n", n_evals, ga_args.n_resample, it, iteration);
+                let row = format!("{},{},{},{}\n", n_evals, tau, it, fitness);
 
                 results_file.write_all(row.as_bytes()).unwrap();
 
