@@ -1,5 +1,6 @@
 use std::fmt;
 // use rayon::prelude::*;
+mod init;
 use std::fs::File;
 use std::io::{Write, Read};
 mod recombinations;
@@ -7,6 +8,7 @@ mod mutations;
 mod init_sim;
 mod selection;
 use recombinations::{recombine_price, recombine_n_offered};
+use init::init_individual;
 use selection::{roulette_selection, tournament_selection};
 use rand_distr::{Binomial, Distribution, Normal, Uniform};
 use rand::prelude::*;
@@ -137,23 +139,6 @@ fn mutate(problem: &TicketProblem, ind: &mut Individual) {
 
 
 
-fn init_individual(rng: &mut ThreadRng, problem: &TicketProblem, customers: &Vec<Customer>, n_resample:u32) -> Individual {
-    
-    let price_dist = Normal::new(2.0, 2.0).unwrap();
-    let price = (0..problem.n_periods).map(|_| price_dist.sample(rng)).collect::<Vec<f32>>();
-    
-    let n_offered_dist = Uniform::new(0, 100);
-    let n_offered = (0..problem.n_periods).map(|_| n_offered_dist.sample(rng)).collect::<Vec<i32>>();
-    
-    let mut new_ind =  Individual {
-        price: price,
-        n_offered: n_offered,
-        val: 0.0
-    };
-
-    new_ind.val = objective_fn(rng, problem, customers, &new_ind, n_resample);
-    new_ind
-}
 
 fn run(ga_args: &GAAgrs, problem: &TicketProblem, customers: &Vec<Customer>, mut population: Vec<Individual>, rng: &mut ThreadRng) -> Vec<f32> {
     let mut avg_fitness_t: Vec<f32> = Vec::new();
@@ -313,7 +298,7 @@ fn main() {
     
     
 
-    let mut results_file = File::create("results_experiment_n_resample1.csv").unwrap();
+    let mut results_file = File::create("results_experiment_long.csv").unwrap();
 
     
     // let avg_fitness_t = run(&ga_args, problem, customers, population, &mut rng);
@@ -327,7 +312,7 @@ fn main() {
     
     // for mutation_rate in 2..7 {
     // for strategy in vec![SelectionStrategy::Roulette, SelectionStrategy::Tournament] {
-    for n_resample in 1..6 {
+    for n_resample in 2..3 {
                 // ga_args.mutation_rate = mutation_rate as f32 / 10.0;
         ga_args.n_resample = n_resample;
 
