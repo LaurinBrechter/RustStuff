@@ -8,7 +8,7 @@ mod mutations;
 mod init_sim;
 mod selection;
 use recombinations::{recombine_price, recombine_n_offered};
-use init::init_individual;
+use init::{init_individual, init_individual_discrete};
 use selection::{roulette_selection, tournament_selection};
 use rand_distr::{Binomial, Distribution, Normal, Uniform};
 use rand::prelude::*;
@@ -132,15 +132,15 @@ fn recombine(rng: &mut ThreadRng, problem: &TicketProblem, ind1: &Individual, in
 }
 
 
-fn mutate(problem: &TicketProblem, ind: &mut Individual) {
-    mutations::mutate_price(&mut ind.price);
+fn mutate(problem: &TicketProblem, ind: &mut Individual, max_price:f32, step_size:i32) {
+    mutations::mutate_price_discrete(&mut ind.price, max_price, step_size);
     mutations::mutate_n_tickets_offered(&mut ind.n_offered, problem.capacity as i32);
 }
 
 
 
 
-fn run(ga_args: &GAAgrs, problem: &TicketProblem, customers: &Vec<Customer>, mut population: Vec<Individual>, rng: &mut ThreadRng) -> Vec<f32> {
+fn run(ga_args: &GAAgrs, problem: &TicketProblem, customers: &Vec<Customer>, mut population: Vec<Individual>, rng: &mut ThreadRng, step_size:i32, max_price:f32) -> Vec<f32> {
     let mut avg_fitness_t: Vec<f32> = Vec::new();
     
     for _ in 0..ga_args.n_iter {
@@ -175,7 +175,7 @@ fn run(ga_args: &GAAgrs, problem: &TicketProblem, customers: &Vec<Customer>, mut
             let mut new_ind = recombine(rng, &problem, &ind1.clone(), &ind2.clone(), &customers, ga_args.n_resample);
             
             if rng.gen::<f32>() < ga_args.mutation_rate {
-                mutate(&problem, &mut new_ind);
+                mutate(&problem, &mut new_ind, max_price, step_size);
             }
 
             new_ind.val = objective_fn(rng, &problem, &customers, &new_ind, ga_args.n_resample);
@@ -191,6 +191,9 @@ fn run(ga_args: &GAAgrs, problem: &TicketProblem, customers: &Vec<Customer>, mut
         population = population.iter().take(ga_args.pop_size as usize).map(|x| x.clone()).collect::<Vec<Individual>>();
 
     };
+
+    // print one individual
+    println!("{:?}", population[0]);
 
     return avg_fitness_t;
 
@@ -284,7 +287,7 @@ fn main() {
     let mut ga_args = GAAgrs {
         pop_size: 100,
         n_iter: 10,
-        n_resample: 3,
+        n_resample: 2,
         n_children: 100,
         mutation_rate: 0.3,
         selection_strategy: SelectionStrategy::Roulette
@@ -298,7 +301,7 @@ fn main() {
     
     
 
-    let mut results_file = File::create("results_experiment_tau.csv").unwrap();
+    let mut results_file = File::create("results_step_size.csv").unwrap();
 
     
     // let avg_fitness_t = run(&ga_args, problem, customers, population, &mut rng);
@@ -311,25 +314,35 @@ fn main() {
     results_file.write("n_evals,parameter,iteration,avg_fitness\n".as_bytes()).unwrap();
 
     let mut tau = 3.0;
-    let n_resample = 3;
 
+
+    let max_wtp = customers.iter().map(|c| c.wtp).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+
+    print!("Max WTP: {}", max_wtp);
     
     // for mutation_rate in 2..7 {
     // for strategy in vec![SelectionStrategy::Roulette, SelectionStrategy::Tournament] {
-    for tau in vec![1, 3, 5] {
-                // ga_args.mutation_rate = mutation_rate as f32 / 10.0;
-        ga_args.n_resample = n_resample;
+    // for n_resample in 2..3 {
+    for step_size in vec![1, 2, 5, 10] {
+    // for tau in vec![1, 3, 5] {
+        // ga_args.mutation_rate = mutation_rate as f32 / 10.0;
+        // ga_args.n_resample = n_resample;
+        // ga_args.selection_strategy = strategy;
 
-        println!("Parameter: {}", tau);
-        let n_evals = ga_args.pop_size * n_resample + ga_args.n_children * ga_args.n_resample * ga_args.n_iter;
+        // println!("Parameter: {}", strategy);
+        let n_evals = ga_args.pop_size * ga_args.n_resample + ga_args.n_children * ga_args.n_resample * ga_args.n_iter;
         
-        for run_t in 0..3 {
+        for run_t in 0..4 {
             let mut it = 0;
-            let population = (0..ga_args.pop_size).map(|_| init_individual(&mut rng, &problem, &customers, ga_args.n_resample, tau as f32)).collect::<Vec<Individual>>();
-            let avg_fitness_t = run(&ga_args, &problem, &customers, population.clone(), &mut rng);
+            let population = (0..ga_args.pop_size).map(|_| init_individual_discrete(&mut rng, &problem, &customers, ga_args.n_resample, tau as f32, step_size)).collect::<Vec<Individual>>();
+
+            // print one individual price
+            println!("{:?}", population[0].price);
+
+            let avg_fitness_t = run(&ga_args, &problem, &customers, population.clone(), &mut rng, step_size, max_wtp*tau);
             for fitness in avg_fitness_t.iter() {
 
-                let row = format!("{},{},{},{}\n", n_evals, tau, it, fitness);
+                let row = format!("{},{},{},{}\n", n_evals, step_size, it, fitness);
 
                 results_file.write_all(row.as_bytes()).unwrap();
 
